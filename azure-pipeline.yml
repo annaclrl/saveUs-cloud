@@ -8,6 +8,8 @@ variables:
   - group: saveus-secrets
   - name: buildConfiguration
     value: "Release"
+  - name: solution
+    value: "Refugio.slnx"
   - name: acrName
     value: "acrsaveusapigs"
   - name: imageRepo
@@ -15,7 +17,7 @@ variables:
   - name: resourceGroupName
     value: "rg-saveus-paas"
   - name: webAppName
-    value: "saveus-api-gs"
+    value: "saveus-api"
 
 stages:
   - stage: Build
@@ -30,21 +32,20 @@ stages:
             inputs:
               packageType: "sdk"
               version: "10.0.x"
-              includePreviewVersions: true
 
-          - script: dotnet restore SaveUs.slnx
+          - script: dotnet restore $(solution)
             displayName: "Restaurar dependências"
 
-          - script: dotnet build SaveUs.slnx --configuration $(buildConfiguration) --no-restore
+          - script: dotnet build $(solution) --configuration $(buildConfiguration) --no-restore
             displayName: "Compilar solução"
 
           - script: |
-              dotnet test SaveUs.slnx --configuration $(buildConfiguration) --no-build \
-                --logger "trx;LogFileName=resultados.trx" \
+              dotnet test $(solution) --configuration $(buildConfiguration) --no-build \
+                --logger "trx" \
                 --results-directory $(Agent.TempDirectory)/TestResults
             displayName: "Executar testes (xUnit: unitários e de integração)"
             env:
-              ConnectionStrings__SaveUs: "User Id=$(ORACLE_USUARIO);Password=$(ORACLE_SENHA);Data Source=$(ORACLE_DATA_SOURCE)"
+              ConnectionStrings__Refugio: "User Id=$(ORACLE_USUARIO);Password=$(ORACLE_SENHA);Data Source=$(ORACLE_DATA_SOURCE)"
               Jwt__Chave: $(JWT_CHAVE)
               Seed__SenhaUsuarios: $(SEED_SENHA_USUARIOS)
 
@@ -53,11 +54,11 @@ stages:
             condition: succeededOrFailed()
             inputs:
               testResultsFormat: "VSTest"
-              testResultsFiles: "$(Agent.TempDirectory)/TestResults/*.trx"
+              testResultsFiles: "$(Agent.TempDirectory)/TestResults/**/*.trx"
               failTaskOnFailedTests: true
 
           - script: |
-              dotnet publish src/SaveUs.Api/SaveUs.Api.csproj --configuration $(buildConfiguration) \
+              dotnet publish src/Refugio.Api/Refugio.Api.csproj --configuration $(buildConfiguration) \
                 --output $(Build.ArtifactStagingDirectory)/publish --no-restore
             displayName: "Publicar artefato da API"
 
@@ -108,6 +109,6 @@ stages:
                       az webapp restart --name $(webAppName) --resource-group $(resourceGroupName)
 
                 - script: |
-                    sleep 30
-                    curl --fail "https://$(webAppName).azurewebsites.net/health"
+                    sleep 60
+                    curl --fail --retry 5 --retry-delay 15 "https://$(webAppName).azurewebsites.net/health"
                   displayName: "Smoke test (health check pós-deploy)"
