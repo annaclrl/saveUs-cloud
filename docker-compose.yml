@@ -1,17 +1,12 @@
-# Sobe a API em contêiner, ligada ao Oracle configurado no .env.
-#   cp .env.example .env     (preencha usuário, senha e JWT_CHAVE)
-#   docker compose up -d --build
-#   → http://localhost:8080/swagger
-
 services:
   api:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile
-    container_name: refugio-api
+    container_name: saveus-api
     restart: unless-stopped
     environment:
-      ConnectionStrings__Refugio: "User Id=${ORACLE_USUARIO:?Defina ORACLE_USUARIO no .env};Password=${ORACLE_SENHA:?Defina ORACLE_SENHA no .env};Data Source=${ORACLE_DATA_SOURCE:-oracle.fiap.com.br:1521/ORCL}"
+      ConnectionStrings__SaveUs: "User Id=${ORACLE_USUARIO:?Defina ORACLE_USUARIO no .env};Password=${ORACLE_SENHA:?Defina ORACLE_SENHA no .env};Data Source=${ORACLE_DATA_SOURCE:-oracle.fiap.com.br:1521/ORCL}"
       Jwt__Chave: ${JWT_CHAVE:?Defina JWT_CHAVE no .env com pelo menos 32 caracteres}
       Seed__SenhaUsuarios: ${SEED_SENHA_USUARIOS:-Senha@123}
       Database__AplicarMigracoesAoIniciar: "true"

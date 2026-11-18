@@ -33,17 +33,44 @@ O **Refúgio** ajuda idosos a enfrentar ondas de calor. Prédios públicos fresc
 | Documentação | OpenAPI + Swagger UI (`/swagger`) |
 | Monitoramento | Health Checks (`/health`: API, banco e ViaCEP) |
 | Testes | xUnit: unitários (regras de negócio) e de integração (WebApplicationFactory + Oracle) |
-| Deploy | Docker, Caddy (HTTPS automático) e VM Linux no Azure |
+| Deploy | Docker, Azure Container Registry (ACR) e Azure App Service (Web App for Containers); CI/CD via Azure Pipelines |
 
 Camadas: `Domain` (regras) ← `Application` (casos de uso, DTOs, validação) ← `Infrastructure` (EF Core, JWT, ViaCEP) ← `Api` (endpoints).
 
+## Arquitetura
+
+```mermaid
+flowchart LR
+    Usuario["Idoso / Gestor<br/>(app Mobile)"] -- HTTPS --> AppService
+
+    subgraph Azure["Azure"]
+        AppService["App Service<br/>Web App for Containers<br/>(saveus-api-gs)"]
+        ACR[("Azure Container Registry")]
+        AppService -- pull da imagem --> ACR
+    end
+
+    AppService -- EF Core / JDBC --> Oracle[("Oracle Database<br/>(FIAP)")]
+
+    subgraph DevOps["Azure DevOps"]
+        Boards["Boards<br/>(tarefas)"] -. vincula .-> Repos["Repos<br/>(branch + PR)"]
+        Repos -- merge na main --> Pipeline["Pipelines<br/>azure-pipeline.yml"]
+    end
+
+    Pipeline -- "1. build + testes (CI)" --> ACR
+    Pipeline -- "2. deploy (CD)" --> AppService
+```
+
+**Fluxo de acesso:** o idoso ou o gestor acessa o Refúgio pelo app Mobile, que consome somente esta API. A requisição chega ao **Azure App Service**, que executa o contêiner `saveus-api-gs` publicado no **Azure Container Registry**. A API conversa com o **Oracle Database da FIAP** via EF Core para ler e gravar refúgios, reservas e usuários.
+
+**Fluxo de entrega:** uma tarefa criada no **Azure Boards** é vinculada a uma branch e a um Pull Request no **Azure Repos**. O merge na `main` (só é permitido via PR, com revisor obrigatório e work item vinculado) dispara a **Pipeline** (`azure-pipeline.yml`): o stage *Build* compila, testa e publica a imagem no ACR; o stage *Release* atualiza o Web App com essa imagem e valida a saúde (`/health`) automaticamente, sem intervenção manual.
+
 ## Como fazer funcionar
 
-**Na nuvem (Azure):** a API fica em **https://refugio-api-gs.eastus.cloudapp.azure.com**. A VM fica desligada quando não está em uso:
+**Na nuvem (Azure):** a API fica em **https://saveus-api-gs.azurewebsites.net**, publicada pela pipeline de CI/CD (ver `azure-pipeline.yml` e `scripts/provisionar-app-service.ps1`). Para parar a cobrança quando não estiver em uso:
 
 ```bash
-az vm start -g rg-refugio-api -n vm-refugio-api        # liga; a API sobe sozinha em ~1 minuto
-az vm deallocate -g rg-refugio-api -n vm-refugio-api   # desliga
+az webapp stop --resource-group rg-saveus-paas --name saveus-api-gs    # desliga
+az webapp start --resource-group rg-saveus-paas --name saveus-api-gs  # religa
 ```
 
 **Local:** precisa do .NET SDK 10 e de acesso ao Oracle.
@@ -59,9 +86,11 @@ Na primeira execução, a API cria as tabelas e os usuários de teste (senha `Se
 
 **Só o banco:** [scripts/script-bd.sql](scripts/script-bd.sql) cria as tabelas e os mesmos dados iniciais, inclusive o gestor. O cadastro pela API cria apenas idosos, então o gestor só existe por esse script ou pelo seed da API. Rode no SQL Developer com F5; a parte de dados pode ser executada de novo sem duplicar.
 
+**Provisionar a nuvem do zero:** [scripts/provisionar-app-service.ps1](scripts/provisionar-app-service.ps1) cria o Resource Group, o ACR e o App Service via Azure CLI (uma única vez). Depois disso, as credenciais do ACR que o script imprime precisam ser cadastradas como Service Connection no Azure DevOps — ver o cabeçalho de [azure-pipeline.yml](azure-pipeline.yml) para a lista completa de pré-requisitos (Service Connections, variable group `saveus-secrets` e o Environment `saveus-producao`). A partir daí, todo merge na `main` publica a nova versão sozinho.
+
 ## Fluxo de usuário (Postman)
 
-No Postman, crie as variáveis `baseUrl` (`https://refugio-api-gs.eastus.cloudapp.azure.com` ou `http://localhost:5159`), `tokenIdoso` e `tokenGestor`. Cada bloco abaixo pode ser colado em **Import → Raw text**. Troque as datas por uma data futura.
+No Postman, crie as variáveis `baseUrl` (`https://saveus-api-gs.azurewebsites.net` ou `http://localhost:5159`), `tokenIdoso` e `tokenGestor`. Cada bloco abaixo pode ser colado em **Import → Raw text**. Troque as datas por uma data futura.
 
 ### Idoso
 
@@ -170,3 +199,24 @@ curl "{{baseUrl}}/health"
 ```
 
 Erros sempre em ProblemDetails (`title`, `detail` e, na validação, `errors` por campo): 400 validação, 401 sem login, 403 papel sem permissão, 404 não encontrado, 409 sem vaga ou conflito, 422 refúgio inativo, 429 excesso de requisições (`Retry-After`).
+
+## CRUD em JSON
+
+A API expõe Swagger (`/swagger`), mas os corpos abaixo resumem o CRUD das duas tabelas principais em JSON puro, para uso direto em Postman/Insomnia (todas exigem `Authorization: Bearer {{tokenGestor}}`, exceto onde indicado).
+
+**Refúgios (`T_RFG_REFUGIO`)**
+
+| Operação | Método + rota | Corpo (JSON) |
+|---|---|---|
+| Create | `POST /api/v1/refugios` | `{"nome":"Biblioteca Municipal da Penha","tipo":"BIBLIOTECA","cep":"03601-000","endereco":"Rua Exemplo, 100","bairro":"Penha","capacidade":20,"abre":"08:00","fecha":"20:00","acessivel":true,"ativo":true}` |
+| Read | `GET /api/v1/refugios/{id}` | — |
+| Update | `PUT /api/v1/refugios/{id}` | `{"nome":"Biblioteca Municipal da Penha","tipo":"BIBLIOTECA","cep":"03601-000","endereco":"Rua Exemplo, 100","bairro":"Penha","capacidade":25,"abre":"08:00","fecha":"21:00","acessivel":true,"ativo":false}` |
+| Delete | `DELETE /api/v1/refugios/{id}` | — |
+
+**Reservas (`T_RFG_RESERVA`)** — `Authorization: Bearer {{tokenIdoso}}` e header `Idempotency-Key: <guid>` no create
+
+| Operação | Método + rota | Corpo (JSON) |
+|---|---|---|
+| Create | `POST /api/v1/reservas` | `{"refugioId":1,"dataReserva":"2026-11-27"}` |
+| Read | `GET /api/v1/reservas/{id}` ou `GET /api/v1/reservas/minhas` | — |
+| Delete (cancelar) | `DELETE /api/v1/reservas/{id}` | — |

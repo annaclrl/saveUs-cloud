@@ -1,0 +1,113 @@
+trigger:
+  branches:
+    include:
+      - main
+pr: none
+
+variables:
+  - group: saveus-secrets
+  - name: buildConfiguration
+    value: "Release"
+  - name: acrName
+    value: "acrsaveusapigs"
+  - name: imageRepo
+    value: "saveus-api"
+  - name: resourceGroupName
+    value: "rg-saveus-paas"
+  - name: webAppName
+    value: "saveus-api-gs"
+
+stages:
+  - stage: Build
+    displayName: "CI - build, testes e imagem"
+    jobs:
+      - job: BuildETestes
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: UseDotNet@2
+            displayName: "Instalar .NET SDK"
+            inputs:
+              packageType: "sdk"
+              version: "10.0.x"
+              includePreviewVersions: true
+
+          - script: dotnet restore SaveUs.slnx
+            displayName: "Restaurar dependências"
+
+          - script: dotnet build SaveUs.slnx --configuration $(buildConfiguration) --no-restore
+            displayName: "Compilar solução"
+
+          - script: |
+              dotnet test SaveUs.slnx --configuration $(buildConfiguration) --no-build \
+                --logger "trx;LogFileName=resultados.trx" \
+                --results-directory $(Agent.TempDirectory)/TestResults
+            displayName: "Executar testes (xUnit: unitários e de integração)"
+            env:
+              ConnectionStrings__SaveUs: "User Id=$(ORACLE_USUARIO);Password=$(ORACLE_SENHA);Data Source=$(ORACLE_DATA_SOURCE)"
+              Jwt__Chave: $(JWT_CHAVE)
+              Seed__SenhaUsuarios: $(SEED_SENHA_USUARIOS)
+
+          - task: PublishTestResults@2
+            displayName: "Publicar resultados dos testes"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "VSTest"
+              testResultsFiles: "$(Agent.TempDirectory)/TestResults/*.trx"
+              failTaskOnFailedTests: true
+
+          - script: |
+              dotnet publish src/SaveUs.Api/SaveUs.Api.csproj --configuration $(buildConfiguration) \
+                --output $(Build.ArtifactStagingDirectory)/publish --no-restore
+            displayName: "Publicar artefato da API"
+
+          - task: PublishBuildArtifacts@1
+            displayName: "Publicar artefato (pacote)"
+            inputs:
+              PathtoPublish: "$(Build.ArtifactStagingDirectory)/publish"
+              ArtifactName: "saveus-api-pacote"
+
+          - task: Docker@2
+            displayName: "Build e push da imagem no ACR"
+            inputs:
+              containerRegistry: "conexao-acr-saveus"
+              repository: "$(imageRepo)"
+              command: "buildAndPush"
+              Dockerfile: "dockerfiles/Dockerfile"
+              buildContext: "."
+              tags: |
+                $(Build.BuildId)
+                latest
+
+  - stage: Release
+    displayName: "CD - deploy no App Service"
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployWebApp
+        displayName: "Deploy na nuvem"
+        pool:
+          vmImage: "ubuntu-latest"
+        environment: "saveus-producao"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: "Atualizar imagem do Web App e reiniciar"
+                  inputs:
+                    azureSubscription: "conexao-azure-saveus"
+                    scriptType: "bash"
+                    scriptLocation: "inlineScript"
+                    inlineScript: |
+                      ACR_LOGIN_SERVER=$(az acr show --name $(acrName) --query loginServer -o tsv)
+                      az webapp config container set \
+                        --name $(webAppName) \
+                        --resource-group $(resourceGroupName) \
+                        --docker-custom-image-name "$ACR_LOGIN_SERVER/$(imageRepo):$(Build.BuildId)"
+                      az webapp restart --name $(webAppName) --resource-group $(resourceGroupName)
+
+                - script: |
+                    sleep 30
+                    curl --fail "https://$(webAppName).azurewebsites.net/health"
+                  displayName: "Smoke test (health check pós-deploy)"
