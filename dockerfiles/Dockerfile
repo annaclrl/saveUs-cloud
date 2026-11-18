@@ -1,21 +1,27 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY src/SaveUs.Api/SaveUs.Api.csproj src/SaveUs.Api/
-COPY src/SaveUs.Application/SaveUs.Application.csproj src/SaveUs.Application/
-COPY src/SaveUs.Domain/SaveUs.Domain.csproj src/SaveUs.Domain/
-COPY src/SaveUs.Infrastructure/SaveUs.Infrastructure.csproj src/SaveUs.Infrastructure/
-RUN dotnet restore src/SaveUs.Api/SaveUs.Api.csproj
+COPY src/Refugio.Api/Refugio.Api.csproj src/Refugio.Api/
+COPY src/Refugio.Application/Refugio.Application.csproj src/Refugio.Application/
+COPY src/Refugio.Domain/Refugio.Domain.csproj src/Refugio.Domain/
+COPY src/Refugio.Infrastructure/Refugio.Infrastructure.csproj src/Refugio.Infrastructure/
+RUN dotnet restore src/Refugio.Api/Refugio.Api.csproj
 
 COPY src/ src/
-RUN dotnet publish src/SaveUs.Api/SaveUs.Api.csproj -c Release -o /app --no-restore
+
+RUN dotnet publish src/Refugio.Api/Refugio.Api.csproj \
+    -c Release \
+    -o /app \
+    --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
+
 COPY --from=build /app .
 
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
+
 USER $APP_UID
 
-ENTRYPOINT ["dotnet", "SaveUs.Api.dll"]
+ENTRYPOINT ["dotnet", "Refugio.Api.dll"]
