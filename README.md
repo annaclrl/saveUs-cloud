@@ -166,8 +166,6 @@ Credenciais do banco e a chave do JWT ficam no variable group do Azure DevOps e 
 
 O CRUD completo está na entidade **Refúgio** (tabela `T_RFG_REFUGIO`), operada pelo gestor. As rotas exigem `Authorization: Bearer {{token}}` de um usuário com papel `GESTOR`. Sem token, a API devolve 401; com token de `IDOSO`, devolve 403 nas operações de escrita.
 
-A collection do Postman com todas as requisições está em [SaveUs-endpoints.postman_collection.json](SaveUs-endpoints.postman_collection.json). Defina `baseUrl` como `https://saveus-api.azurewebsites.net`.
-
 | Operação | Ação no sistema | Rota | Retorno |
 |---|---|---|---|
 | Incluir | Cadastrar refúgio | `POST /api/v1/refugios` | 201 |
