@@ -448,3 +448,10 @@ O repositório, as tarefas e as pipelines de CI/CD estão no projeto do Azure De
 Demonstração em vídeo da solução, do fluxo de CI/CD ao uso da API na nuvem:
 
 🎥 [Assistir demonstração no YouTube](https://youtu.be/GPdDYCtVTpk)
+
+> ⚠️ **Observação sobre o requisito de CRUD em duas tabelas**
+>
+> O vídeo completo passou de 15 minutos, e o YouTube não permitiu a publicação.
+> Para ficar dentro do limite, mantive a demonstração do CRUD completo
+> (Create, Read, Update e Delete) da tabela `refugio` e priorizei a parte de
+> deploy, variáveis de ambiente e pipeline de CI/CD.
