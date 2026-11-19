@@ -426,7 +426,7 @@ az webapp start --resource-group rg-saveus-paas --name saveus-api   # religa
 
 O repositório, as tarefas e as pipelines de CI/CD estão no projeto do Azure DevOps:
 
-🔗 [Projeto SaveUs no Azure DevOps](LINK_DO_PROJETO_AZURE_DEVOPS)
+🔗 [Projeto SaveUs no Azure DevOps](https://dev.azure.com/rm561928/Global%20Solution%20-SaveUs)
 
 ---
 
@@ -447,4 +447,4 @@ O repositório, as tarefas e as pipelines de CI/CD estão no projeto do Azure De
 
 Demonstração em vídeo da solução, do fluxo de CI/CD ao uso da API na nuvem:
 
-🎥 [Assistir demonstração no YouTube](LINK_DO_VIDEO)
+🎥 [Assistir demonstração no YouTube](https://youtu.be/GPdDYCtVTpk)
