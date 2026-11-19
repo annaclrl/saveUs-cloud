@@ -38,7 +38,6 @@
 - [💼 Benefícios para o Negócio](#-benefícios-para-o-negócio)
 - [🧩 CRUD Implementado](#-crud-implementado)
 - [☁️ Como Fazer o Deploy em Cloud (Azure)](#️-como-fazer-o-deploy-em-cloud-azure)
-- [💻 Como Rodar Localmente](#-como-rodar-localmente)
 - [🧩 Componentes da Arquitetura Cloud](#-componentes-da-arquitetura-cloud)
 - [🔗 Projeto no Azure DevOps](#-projeto-no-azure-devops)
 - [📊 Benefícios da Arquitetura em Cloud](#-benefícios-da-arquitetura-em-cloud)
@@ -165,39 +164,111 @@ Credenciais do banco e a chave do JWT ficam no variable group do Azure DevOps e 
 
 # 🧩 CRUD Implementado
 
-O CRUD completo está na entidade **Refúgio** (`T_RFG_REFUGIO`), operada pelo gestor. Todas as rotas exigem `Authorization: Bearer {{tokenGestor}}`.
+O CRUD completo está na entidade **Refúgio** (tabela `T_RFG_REFUGIO`), operada pelo gestor. As rotas exigem `Authorization: Bearer {{token}}` de um usuário com papel `GESTOR`. Sem token, a API devolve 401; com token de `IDOSO`, devolve 403 nas operações de escrita.
 
-| Operação | Ação no sistema | Rota |
-|---|---|---|
-| Incluir | Cadastrar refúgio | `POST /api/v1/refugios` |
-| Consultar | Listar (com filtros e paginação) e ver detalhes | `GET /api/v1/refugios` e `GET /api/v1/refugios/{id}` |
-| Alterar | Editar dados, capacidade, horário ou desativar | `PUT /api/v1/refugios/{id}` |
-| Excluir | Remover refúgio (409 se houver reservas ativas futuras) | `DELETE /api/v1/refugios/{id}` |
+A collection do Postman com todas as requisições está em [SaveUs-endpoints.postman_collection.json](SaveUs-endpoints.postman_collection.json). Defina `baseUrl` como `https://saveus-api.azurewebsites.net`.
 
-**Corpo JSON de exemplo (create/update):**
+| Operação | Ação no sistema | Rota | Retorno |
+|---|---|---|---|
+| Incluir | Cadastrar refúgio | `POST /api/v1/refugios` | 201 |
+| Consultar | Listar (filtros e paginação) | `GET /api/v1/refugios?pagina=1&tamanho=10` | 200 |
+| Consultar | Detalhar refúgio | `GET /api/v1/refugios/{id}` | 200 / 404 |
+| Alterar | Editar dados, capacidade, horário ou desativar | `PUT /api/v1/refugios/{id}` | 200 / 400 / 404 |
+| Excluir | Remover refúgio | `DELETE /api/v1/refugios/{id}` | 204 / 409 |
+
+### 0. Login do gestor (obter o token)
+
+`POST /auth/login`
 
 ```json
 {
-  "nome": "Biblioteca Municipal da Penha",
+  "email": "gestor@refugio.com",
+  "senha": "Senha@123"
+}
+```
+
+Resposta `200`: `token`, `expiraEm` e `usuario`. O token vai no header `Authorization: Bearer <token>`.
+
+### 1. Create — cadastrar refúgio
+
+`POST /api/v1/refugios`
+
+```json
+{
+  "nome": "Biblioteca Central",
   "tipo": "BIBLIOTECA",
-  "cep": "03601-000",
-  "endereco": "Rua Exemplo, 100",
-  "bairro": "Penha",
-  "capacidade": 20,
-  "abre": "08:00",
-  "fecha": "20:00",
+  "cep": "01001000",
+  "endereco": "Praça da Sé, 100",
+  "bairro": "Sé",
+  "capacidade": 40,
+  "abre": "08:00:00",
+  "fecha": "18:00:00",
   "acessivel": true,
   "ativo": true
 }
 ```
 
-A entidade **Reserva** (`T_RFG_RESERVA`) completa o fluxo do idoso. Exige `Authorization: Bearer {{tokenIdoso}}` e, no create, o header `Idempotency-Key: <guid>`.
+Resposta `201` com o `id` criado e `vagasDisponiveis`. Valores aceitos em `tipo`: `BIBLIOTECA`, `CENTRO_COMUNITARIO`, `CEU`, `UBS`, `ESCOLA`, `IGREJA`, `OUTRO`. `abre`/`fecha` aceitam `HH:mm` ou `HH:mm:ss`.
 
-| Operação | Rota | Corpo |
-|---|---|---|
-| Incluir | `POST /api/v1/reservas` | `{"refugioId":1,"dataReserva":"2026-11-27"}` |
-| Consultar | `GET /api/v1/reservas/{id}` ou `GET /api/v1/reservas/minhas` | — |
-| Excluir (cancelar) | `DELETE /api/v1/reservas/{id}` | — |
+### 2. Read — consultar refúgios
+
+`GET /api/v1/refugios?pagina=1&tamanho=10` (filtros opcionais: `bairro`, `data`, `ativo`)
+
+`GET /api/v1/refugios/{id}`
+
+```json
+{
+  "id": 6,
+  "nome": "Biblioteca Central",
+  "tipo": "BIBLIOTECA",
+  "cep": "01001000",
+  "endereco": "Praça da Sé, 100",
+  "bairro": "Sé",
+  "capacidade": 40,
+  "vagasDisponiveis": 40,
+  "abre": "08:00",
+  "fecha": "18:00",
+  "acessivel": true,
+  "ativo": true
+}
+```
+
+### 3. Update — alterar refúgio
+
+`PUT /api/v1/refugios/{id}` (corpo completo, igual ao POST)
+
+```json
+{
+  "nome": "Biblioteca Central",
+  "tipo": "BIBLIOTECA",
+  "cep": "01001000",
+  "endereco": "Praça da Sé, 100",
+  "bairro": "Sé",
+  "capacidade": 50,
+  "abre": "08:00:00",
+  "fecha": "20:00:00",
+  "acessivel": true,
+  "ativo": true
+}
+```
+
+Resposta `200` com o refúgio atualizado.
+
+### 4. Delete — excluir refúgio
+
+`DELETE /api/v1/refugios/{id}` (sem corpo)
+
+Resposta `204`. Se o refúgio tiver reservas ativas futuras, a API devolve `409`; na demonstração, exclua um refúgio recém-criado.
+
+### Conferência no banco
+
+Depois de cada operação, a persistência é conferida direto no Oracle:
+
+```sql
+SELECT * FROM T_RFG_REFUGIO ORDER BY ID DESC;
+```
+
+> As reservas dos idosos (`T_RFG_RESERVA`) também são gravadas pela API (`POST /api/v1/reservas`, `GET /api/v1/reservas/minhas`, `DELETE /api/v1/reservas/{id}` para cancelar), mas o CRUD demonstrado é o de Refúgio.
 
 ---
 
@@ -332,31 +403,6 @@ Para parar a cobrança quando não estiver em uso:
 az webapp stop  --resource-group rg-saveus-paas --name saveus-api   # desliga
 az webapp start --resource-group rg-saveus-paas --name saveus-api   # religa
 ```
-
----
-
-# 💻 Como Rodar Localmente
-
-**Com .NET SDK** (precisa de acesso ao Oracle):
-
-```bash
-dotnet user-secrets set "ConnectionStrings:Refugio" "User Id=SEU_RM;Password=SUA_SENHA;Data Source=oracle.fiap.com.br:1521/ORCL" --project src/Refugio.Api
-dotnet user-secrets set "Jwt:Chave" "$(openssl rand -base64 48)" --project src/Refugio.Api
-dotnet run --project src/Refugio.Api      # http://localhost:5159/swagger
-dotnet test                               # testes unitários e de integração
-```
-
-**Com Docker:**
-
-```bash
-cp .env.example .env    # preencha as credenciais
-docker compose up --build    # http://localhost:8080/swagger
-```
-
-Na primeira execução, a API cria as tabelas e os usuários de teste (senha `Senha@123`): `gestor@refugio.com` (GESTOR), `maria@email.com` e `jose@email.com` (IDOSO).
-
-**Só o banco:** [scripts/script-bd.sql](scripts/script-bd.sql) cria as tabelas e os mesmos dados iniciais, inclusive o gestor. O cadastro pela API cria apenas idosos, então o gestor só existe por esse script ou pelo seed da API. Rode no SQL Developer com F5; a parte de dados pode ser executada de novo sem duplicar.
-
 ---
 
 # 🧩 Componentes da Arquitetura Cloud
